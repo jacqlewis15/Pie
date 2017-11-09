@@ -37,6 +37,6 @@ def change():
 		picTime = initPicTime
 	contents = phaseTxt+"\n"+lightTime+"\n"+darkTime+"\n"+picTime
 	writeFile(path,contents)
-	print(contents)
+	print("Phase: %s\nLight Time: %s\nDark Time: %s\nPic Time: %s" % (phaseTxt,lightTime,darkTime,picTime))
 
 change()

@@ -41,7 +41,7 @@ def run():
 	while True:
 
 		inWhile = False
-		print("nothing works")
+		
 		phase = getPhaseValue()
 		
 		if phase:
@@ -53,21 +53,10 @@ def run():
 			lastDark = initTime
 			lastPic = initTime
 
-			print("before getting values")
 			# convert from minutes to seconds
 			lightTime = 60*getLightValue() 
 			darkTime = 60*getDarkValue()
 			picTime = 60*getPicValue()
-			print("after getting values")
-
-			# GPIO.setmode(GPIO.BCM)
-			# lightPin,picPin,stirPin = 26,20,21
-			# pins = [lightPin,picPin,stirPin]
-			# GPIO.setup(pins, GPIO.OUT)
-			
-			# camera = picamera.PiCamera()
-			# off = GPIO.HIGH
-			# on = GPIO.LOW
 			
 			GPIO.output(lightPin, on)
 			GPIO.output(stirPin, off)
@@ -77,19 +66,18 @@ def run():
 		while phase:
 
 			inWhile = True
-
-			print("before loop values")
-			phase = getPhaseValue()
-			print("after phase")
-			lightTime = 60*getLightValue()
-			print("after light") 
-			darkTime = 60*getDarkValue()
-			print("after dark")
-			picTime = 60*getPicValue()
-			print("after pic")
-			currTime = time.time()
-			print("after loop values")
-			# print("after getting values in loop")
+			
+			try:
+				phase = getPhaseValue()
+				
+				lightTime = 60*getLightValue()
+				darkTime = 60*getDarkValue()
+				picTime = 60*getPicValue()
+				
+				currTime = time.time()
+				
+			except:
+				continue
 
 			if light and ((currTime - lastDark) >= lightTime):
 				lastLight = currTime
@@ -111,7 +99,7 @@ def run():
 				lastPic = currTime
 				date = time.localtime(currTime)
 				picName = time.strftime("y%ym%md%dH%HM%M.jpg",date)
-				picName = "pics/"+picName
+				picName = "/var/www/html/pics/"+picName
 				if light:
 					# turn lights off
 					GPIO.output(lightPin, off)
