@@ -1,5 +1,6 @@
 import string
 import os
+from shutil import copyfile
 
 def writeFile(path, contents):
     with open(path, "wt") as f:
@@ -37,6 +38,7 @@ def change():
 		picTime = initPicTime
 	contents = phaseTxt+"\n"+lightTime+"\n"+darkTime+"\n"+picTime
 	writeFile(path,contents)
+	copyfile(path, "/var/www/html/values.txt")
 	print("Phase: %s\nLight Time: %s\nDark Time: %s\nPic Time: %s" % (phaseTxt,lightTime,darkTime,picTime))
 
 change()
