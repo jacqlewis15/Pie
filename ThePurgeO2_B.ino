@@ -17,6 +17,7 @@ float RunAverage[10]={0,0,0,0,0,0,0,0,0,0};
 
 const float VRefer = 3.3;       // voltage of adc reference
 const int pinAdc   = A1;        // O2 Sensor
+double calibration; // 357 on raspberry pi, 345 on cpu
 
 
 
@@ -30,6 +31,8 @@ void setup() {
   Serial.println(zeropoint_float); 
    pinMode(GasOutPin, OUTPUT);
    digitalWrite(GasOutPin,LOW);
+  calibration = calibrate();
+  Serial.println(calibration);
 /*
    lcd.init();  //initialize the lcd
    lcd.backlight();  //open the backlight
@@ -37,6 +40,18 @@ void setup() {
    
 }
 
+int calibrate() {
+  
+  long sum = 0;
+  for(int i=0; i<64; i++)
+  {
+    sum += analogRead(pinAdc);
+  }
+
+  sum >>= 6;
+  return sum;
+  
+}
 
 void loop(void) {
   
@@ -118,7 +133,7 @@ float readO2Vout()
 
     sum >>= 6;
 
-    float MeasuredVout = sum * (VRefer / 1023.0);
+    float MeasuredVout = sum / calibration;
     return MeasuredVout;
 }
 
@@ -129,7 +144,7 @@ float readConcentration()
 
     //float Concentration = FmultiMap(MeasuredVout, VoutArray,O2ConArray, 6);
     //when its output voltage is 2.0V,
-    float Concentration = MeasuredVout * 0.239;
+    float Concentration = MeasuredVout * 0.209;
     float Concentration_Percentage=Concentration*100;
     return Concentration_Percentage;
 }

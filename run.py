@@ -4,14 +4,23 @@
 ## HOW TO SET-UP A RASPBERRY PI ##
 ##################################
 
-# 1. Change password from default raspberry:
-#		from command line, input passwd
-# 2. Enable camera and ssh:
+# 1. Determine wlan0 address:
+#		>>> ifconfig
+# 2. Change password from default raspberry:
+#		>>> passwd
+# 3. Enable camera and ssh:
 #		preferences -> raspberry pi configuration -> interfaces
-# 3. Install fswebcam: 
-#		sudo apt-get install fswebcam
+# 3. Set time zone and keyboard:
+#		preferences -> raspberry pi configuration -> localisation
+#			keyboard is Macintosh
+# 4. Install modules: 
+#       fswebcam:
+#       >>> sudo apt-get update
+#		>>> sudo apt-get install fswebcam
 #		check that camera works: from command line, input fswebcam "image.jpg"
-# 4. (Optional) to run from startup, edit /etc/rc.local (before the exit command)
+#       pyexiv2:
+#       >>> sudo apt-get install python-pyexiv2
+# 5. (Optional) to run from startup, edit /etc/rc.local (before the exit command)
 #		python /home/pi/<path to file>/run.py &
 
 ##################################
@@ -33,8 +42,6 @@ import subprocess
 from Tkinter import *
 import Tkinter, Tkconstants, tkFileDialog
 import pyexiv2
-import json
-import pprint
 
 
 # file reading/writing from 15-112 
@@ -362,7 +369,7 @@ def runKeyPressed(event, data):
 				data.newPicTime = int(float(data.picTime)*60)
 				data.cycling = False
 			else: data.error = "Must enter valid picture time"
-		elif event.keysym.isdecimal(): 
+		elif event.keysym in map(str,range(10)): 
 			data.error = ""
 			data.picTime += event.keysym
 			if len(data.picTime)>7: data.picTime = data.picTime[:-1]
@@ -411,7 +418,7 @@ def picture(data,address,foldName,letter,picName):
 	userdata = (pressure).join(userdata.split("Pressure:"))
 	userdata = (oxygen).join(userdata.split("Oxygen:"))
 	userdata = (title).join(userdata.split("Illumination Time:"))
-	metadata['Exif.Photo.UserComment']=json.dumps(userdata)
+	metadata['Exif.Image.XPComment']=pyexiv2.utils.string_to_undefined(userdata.encode('utf-16'))
 	metadata.write()
 
 # This function takes a single picture of the testing system
