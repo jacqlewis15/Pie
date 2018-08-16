@@ -89,6 +89,13 @@ def init(data):
 	data.newPicTime = int(float(data.picTime)*60)
 	data.illTime = 0
 
+	data.quenching = False
+	data.hanging = False
+	data.start = 0
+	data.O2vals = range(20,0,-1)+[.5,.1,0]
+	
+	data.lastGoodO2 = 0
+
 	try: 
 		data.ser = serial.Serial('/dev/ttyACM0', 9600)
 		data.ser.flushInput()
@@ -193,6 +200,10 @@ def press(data, index):
 	if index == 4 and not data.running: takePics(data)
 	if index == 5 and not data.running and not data.lights[0]: takeAPic(data)
 	if index == 10: data.mode = "setCycle"
+	if index == 11: 
+		data.quenching = not data.quenching
+		if data.quenching: data.O2vals = range(20,0,-1)+[.5,.1,0]
+		else: data.hanging = False
 
 
 def fileExplorer():
@@ -247,6 +258,8 @@ def runMousePressed(event, data):
 	if event.x > right+bwidth+margin and event.x < right+bwidth*5/4+margin:
 		if event.y > bheight+4*(margin+bheight) and event.y < 2*bheight+4*(margin+bheight):
 			press(data, 10)
+		if event.y > bheight+6*(margin+bheight) and event.y < 2*bheight+6*(margin+bheight):
+			press(data,11)
 
 
 # These functions determine if a path is a folder or a file.
@@ -498,6 +511,13 @@ def runTimerFired(data):
 				data.numCycles += 1
 				if data.numCycles >= data.cycles[1][data.cIndex]:
 					nextCycle(data)
+	if data.hanging:
+		if (time.time()-data.start) > 120: 
+			pressLight(data,7)
+			takeAPic(data)
+			pressLight(data,7)
+			data.hanging = False
+			data.O2vals = filter(lambda x: x < data.lastGoodO2, data.O2vals)
 	# updates the blinking cursor for editing
 	if data.edit[0]:
 		if data.time % 5 == 0: data.pipe[0] = not data.pipe[0]
@@ -556,6 +576,11 @@ def drawButtons(canvas, data):
 			text2 = "Folder: " + data.folder + piping(data,data.pipe[1])
 			font2 = "Arial 15 bold"
 		if i == 3:
+			if data.quenching: fill = "red"
+			else: fill = "black"
+			corner = right+bwidth+margin
+			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,fill="lightgray")
+			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Quench",font="Arial 10 bold",fill=fill)
 			if data.running: text2,fill = "End run","red"  
 			else: text2,fill = "Start run","black"
 			font2 = "Arial 20 bold"
@@ -598,8 +623,14 @@ def readData(data):
 
 	sensorData = str(data.pressure)[:-2].split(",")
 	if len(sensorData) != 2: sensorData = [""]*2
+	if sensorData[1] != "":
+		data.lastGoodO2 = float(sensorData[1])
 	text = "Pressure: " + sensorData[0]
-	text2 = "Oxygen: " + sensorData[1]
+	text2 = "Oxygen: " + str(data.lastGoodO2)
+	if (not data.hanging) and data.quenching and sensorData[1] != "":
+		if data.O2vals != [] and data.lastGoodO2 <= data.O2vals[0]:
+			data.start = time.time()
+			data.hanging = True
 	return text,text2
 
 # This function connects to the Arduino and prints the pressure output.
@@ -701,7 +732,7 @@ def writeCycle(event, data, index, col):
 				# cycle numbers can only be integers
 				else: lst[1][index] = int(lst[0][index])
 		else: data.error = "Must enter valid picture time"
-	elif event.keysym.isdecimal(): 
+	elif event.keysym in map(str,range(10)): 
 		lst[0][index] += event.keysym
 		if len(lst[0][index])>7: lst[0][index] = lst[0][index][:-1]
 	elif event.keysym == "BackSpace": 
