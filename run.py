@@ -54,27 +54,11 @@ def readFile(path):
     with open(path, "rt") as f:
         return f.read()
 
-
-def initMeta():
-	lines = [""]*34
-	lines[0] = "Illumination Time:"
-	lines[1] = "Pressure:"
-	lines[2] = "Oxygen:"
-	for i in range(13,25):
-		lines[i] = str(i-12) + ":"
-	for i in range(26,34):
-		lines[i] = list(string.ascii_uppercase)[i-26] + ":"
-	return "\n".join(lines)
-
-
 ####################################
 # UI
 ####################################
 
-def init(data):
-	
-	# Initialization of user interface
-
+def initRun(data):
 	data.lights = [False]*8 # Number of lights connected
 	data.picTime = "1" 
 	data.edit = [False,False,[False]*8,[False]*8,False] # run and cycle edits
@@ -89,6 +73,15 @@ def init(data):
 	data.newPicTime = int(float(data.picTime)*60)
 	data.illTime = 0
 
+def initQuenching(data):
+	data.quenching = False
+	data.hanging = False
+	data.start = 0
+	data.nextO2 = range(20,0,-1)+[.5,.1,0]
+	data.count0 = None
+	data.taken = False
+
+def initArduino(data):
 	try: 
 		data.ser = serial.Serial('/dev/ttyACM0', 9600)
 		data.ser.flushInput()
@@ -96,22 +89,10 @@ def init(data):
 	data.pressure = "----"
 	data.O2vals = []
 	data.lastO2 = 0
+	data.lastPressure = 0
 
-	# Metadata editing
-
-	data.index = (0,0)
-	data.mEdit = initMeta()
-	data.metadata = initMeta()
-
-	# Initializes cycles
-
-	data.times = [[""]*8, [0]*8] # editing and non-editing
-	data.cycles = [[""]*8, [0]*8] # editing and non-editing
-	data.cycling = False
-	data.edited = False
-
+def initPins(data):
 	# Initializes Raspberry Pi to communicate with relay board
-
 	GPIO.setmode(GPIO.BCM)
 	data.pins = [4,17,27,22,5,6,13,19]
 	data.lightPins = data.pins[:2]
@@ -122,6 +103,38 @@ def init(data):
 
 	for pin in data.pins:
 		GPIO.output(pin, data.off)
+
+def initCycle(data):
+	# Initializes cycles
+	data.times = [[""]*8, [0]*8] # editing and non-editing
+	data.cycles = [[""]*8, [0]*8] # editing and non-editing
+	data.cycling = False
+	data.edited = False
+
+def initMeta():
+	lines = [""]*34
+	lines[0] = "Illumination Time:"
+	lines[1] = "Pressure:"
+	lines[2] = "Oxygen:"
+	for i in range(13,25):
+		lines[i] = str(i-12) + ":"
+	for i in range(26,34):
+		lines[i] = list(string.ascii_uppercase)[i-26] + ":"
+	return "\n".join(lines)
+
+def init(data):
+	# Initialization of user interface
+	initRun(data)
+	initArduino(data)
+	initQuenching(data)
+
+	# Metadata editing
+	data.index = (0,0)
+	data.mEdit = initMeta()
+	data.metadata = initMeta()
+
+	initCycle(data)
+	initPins(data)
 
 
 ####################################
@@ -195,6 +208,9 @@ def press(data, index):
 	if index == 4 and not data.running: takePics(data)
 	if index == 5 and not data.running and not data.lights[0]: takeAPic(data)
 	if index == 10: data.mode = "setCycle"
+	if index == 11: 
+		data.quenching = not data.quenching
+		if not data.quenching: initQuenching(data)
 
 
 def fileExplorer():
@@ -249,6 +265,8 @@ def runMousePressed(event, data):
 	if event.x > right+bwidth+margin and event.x < right+bwidth*5/4+margin:
 		if event.y > bheight+4*(margin+bheight) and event.y < 2*bheight+4*(margin+bheight):
 			press(data, 10)
+		if event.y > bheight+6*(margin+bheight) and event.y < 2*bheight+6*(margin+bheight):
+			press(data,11)
 
 
 # These functions determine if a path is a folder or a file.
@@ -500,13 +518,34 @@ def runTimerFired(data):
 				data.numCycles += 1
 				if data.numCycles >= data.cycles[1][data.cIndex]:
 					nextCycle(data)
-	# updates the blinking cursor for editing
 	if data.edit[0]:
 		if data.time % 5 == 0: data.pipe[0] = not data.pipe[0]
 	if data.edit[1]:
 		if data.time % 5 == 0: data.pipe[1] = not data.pipe[1]
 	if data.edit[4]:
 		if data.time % 5 == 0: data.pipe[4] = not data.pipe[4]
+	if data.hanging:
+		if (time.time()-data.start) > 120: 
+			pressLight(data,7)
+			takeAPic(data)
+			pressLight(data,7)
+			data.hanging = False
+			data.nextO2 = filter(lambda x: x < (data.lastO2), data.nextO2)
+	if data.quenching and len(data.nextO2) < 5 and not data.taken:
+		sensorData = str(data.pressure)[:-2].split(",")
+		if len(sensorData) != 2: sensorData = [""]*2
+		if sensorData[1] != "": 
+			if float(sensorData[1]) == 0 and data.count0 == None:
+				data.count0 = time.time()
+			elif float(sensorData[1]) <= 0.2 and data.count0 != None:
+				if time.time()-data.count0 > 300 and float(sensorData[1]) == 0:
+					pressLight(data,7)
+					takeAPic(data)
+					pressLight(data,7)
+					data.taken = True
+			else:
+				data.count0 = None
+	# updates the blinking cursor for editing
 	data.time += 1
 
 
@@ -558,12 +597,21 @@ def drawButtons(canvas, data):
 			text2 = "Folder: " + data.folder + piping(data,data.pipe[1])
 			font2 = "Arial 15 bold"
 		if i == 3:
+			if data.quenching: fill = "red"
+			else: fill = "black"
+			corner = right+bwidth+margin
+			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,fill="lightgray")
+			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Quench",font="Arial 10 bold",fill=fill)
 			if data.running: text2,fill = "End run","red"  
 			else: text2,fill = "Start run","black"
 			font2 = "Arial 20 bold"
 			corner = right+bwidth+margin+2
 			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,text="Cycle Set",font="Arial 15 bold")
-		if i == 4: text2 = "Take Pictures"
+		if i == 4: 
+			text2 = "Take Pictures"
+			if data.hanging:
+				corner = right+bwidth+margin
+				canvas.create_text(corner+5,(bottom-top)/2+top,anchor="w",text="Hanging",font="Arial 10 bold")
 		if i == 5: text2 = "Take a Picture"
 		canvas.create_text(right+bwidth/2,top+bheight/2,text=text2,font=font2,fill=fill)
 
@@ -605,13 +653,24 @@ def readData(data):
 
 	sensorData = str(data.pressure)[:-2].split(",")
 	if len(sensorData) != 2: sensorData = [""]*2
-	text = "Pressure: " + sensorData[0]
+	if sensorData[0] != "" and (500 < float(sensorData[0]) < 1020):
+		data.lastPressure = sensorData[0]
+	text = "Pressure: " + str(data.lastPressure)
 	if sensorData[0] != "" and float(sensorData[0]) < 800:
 		data.O2vals.append(float(sensorData[1]))
 		if len(data.O2vals) == 15:
 			data.lastO2 = average(data.O2vals)
 			data.O2vals = []
 	text2 = "Oxygen: " + str(data.lastO2)
+	if (not data.hanging) and data.quenching and sensorData[1] != "":
+		if data.nextO2 != []:
+			if ((data.nextO2[0] > 1 and data.lastO2 <= (data.nextO2[0]-.7)) or
+					(1 >= data.nextO2[0] > .1 and data.lastO2 <= (data.nextO2[0]-.3))
+						or (data.nextO2 <= .1 and data.lastO2 <= (data.nextO2[0]-.1))):
+				data.start = time.time()
+				print("Hanging")
+				data.hanging = True
+
 	return text,text2
 
 # This function connects to the Arduino and prints the pressure output.
@@ -624,11 +683,15 @@ def drawSensors(canvas, data):
 	if data.time % 15 == 0: 
 		# read from serial port
 		try: 
+			if data.hanging: data.ser.write("wait")
+			else: data.ser.write("go")
 			data.pressure = data.ser.readline()
 			data.ser.flushInput()
 		except: 
 			try: 
 				data.ser = serial.Serial('/dev/ttyACM0', 9600)
+				if data.hanging: data.ser.write("wait")
+				else: data.ser.write("go")
 				data.pressure = data.ser.readline() 
 				data.ser.flushInput()
 			except: 

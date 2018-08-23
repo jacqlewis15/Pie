@@ -17,19 +17,16 @@ float RunAverage[10]={0,0,0,0,0,0,0,0,0,0};
 
 const float VRefer = 3.3;       // voltage of adc reference
 const int pinAdc   = A1;        // O2 Sensor
-double calibration; // 357 on raspberry pi, 345 on cpu
-
-int in;
-bool quenching = false;
+double calibration = 343; 
+// 274 for frankenbox, 290 on raspi
+// 262 for bulb, 271 on raspi
+// 343 for ivy, 359 on raspi
 bool hanging = false;
-int O2vals[22] = {20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0};
-float O2val;
-int index = 0;
-unsigned long start;
+float O2val = 0;
+String bitIn;
 
 void setup() {
   Serial.begin(9600);
-  quenching = true;
   Serial.println("Purge-o-matic!"); 
   zeropoint_float = 533;
 
@@ -37,7 +34,8 @@ void setup() {
   Serial.println(zeropoint_float); 
    pinMode(GasOutPin, OUTPUT);
    digitalWrite(GasOutPin,LOW);
-  calibration = calibrate();
+  //calibration = calibrate(); // 21???
+  Serial.println("Calibration is:");
   Serial.println(calibration);
 /*
    lcd.init();  //initialize the lcd
@@ -61,81 +59,37 @@ int calibrate() {
 
 void loop(void) {
   
-
+  if (Serial.available() > 0) {
+    bitIn = Serial.readString();
+    if (bitIn == "wait") {
+      hanging = true;
+      
+    }
+    else if (bitIn == "go") {hanging = false;}
+  }
   pressure_Read();
   Serial.print(sensorValue);
   Serial.print(",");
   O2val = readConcentration();
   Serial.println(O2val); 
-  if (hanging) {
-    if ((millis()-start) > 140000) {
-      hanging = false; 
-      for (int i=0; i<22; i++) {
-        if (O2val > O2vals[i]) {
-          index = i;
-          break;
-        }
-      }
-    }
-  }
-  else if (quenching and (O2val < O2vals[index])) {
-    start = millis();
-    hanging = true;
-  }
-  else {
+  if (not hanging) {
     //Serial.println(zeropoint_float); 
     if (sensorValue < zeropoint_float) {
       digitalWrite(GasOutPin,LOW);
-      /*
-      lcd.setCursor(0, 0); // set the cursor to column 3, line 0
-      lcd.print("p: ");  // Print a message to the LCD
-       lcd.setCursor(9, 0); // set the cursor to column 3, line 0
-       lcd.print(" ");  // Print a message to the LCD
-      lcd.setCursor(2, 0); // set the cursor to column 3, line 0
-      lcd.print(sensorValue);  // Print a message to the LCD
-      lcd.setCursor(10, 0); // set the cursor to column 3, line 0
-      lcd.print("Open  ");  // Print a message to the LCD
-      lcd.setCursor(0, 1); // set the cursor to column 3, line 0
-      lcd.print("O2: ");  // Print a message to the LCD
-      lcd.setCursor(4, 1); // set the cursor to column 3, line 0
-      lcd.print(readConcentration());  // Print a message to the LCD 
-      */ 
+      
       delay(1000);
     }
     if (sensorValue > zeropoint_float) {
       digitalWrite(GasOutPin,HIGH);
-      /*
-      lcd.setCursor(0, 0); // set the cursor to column 3, line 0
-      lcd.print("p: ");  // Print a message to the LCD
-       lcd.setCursor(9, 0); // set the cursor to column 3, line 0
-       lcd.print(" ");  // Print a message to the LCD
-      lcd.setCursor(2, 0); // set the cursor to column 3, line 0
-      lcd.print(sensorValue);  // Print a message to the LCD
-      lcd.setCursor(10, 0); // set the cursor to column 3, line 0
-      lcd.print("Closed  ");  // Print a message to the LCD
-      lcd.setCursor(0, 1); // set the cursor to column 3, line 0
-      lcd.print("O2: ");  // Print a message to the LCD
-      lcd.setCursor(4, 1); // set the cursor to column 3, line 0
-      lcd.print(readConcentration());  // Print a message to the LCD
-      */  
+      
       delay(1000);
     }
   }
+  else {
+    digitalWrite(GasOutPin,HIGH);
+  }
 
-      /*
-      lcd.setCursor(0, 0); // set the cursor to column 3, line 0
-      lcd.print("p: ");  // Print a message to the LCD
-      lcd.setCursor(9, 0); // set the cursor to column 3, line 0
-      lcd.print(" ");  // Print a message to the LCD
-      lcd.setCursor(2, 0); // set the cursor to column 3, line 0
-      lcd.print(sensorValue);  // Print a message to the LCD
-      lcd.setCursor(10, 0); // set the cursor to column 3, line 0
-     // lcd.print("Open  ");  // Print a message to the LCD
-      lcd.setCursor(0, 1); // set the cursor to column 3, line 0
-      lcd.print("O2: ");  // Print a message to the LCD
-      lcd.setCursor(4, 1); // set the cursor to column 3, line 0
-      lcd.print(readConcentration());  // Print a message to the LCD  
-      */
+      
 }
 
 void pressure_Read(){
