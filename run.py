@@ -395,7 +395,7 @@ def runKeyPressed(event, data):
 			if len(data.picTime)>7: data.picTime = data.picTime[:-1]
 		elif event.keysym == "BackSpace": 
 			data.picTime = data.picTime[:-1]
-		elif event.keysym == "period" and (data.picTime.isdecimal() or data.picTime == ""):
+		elif event.keysym == "period" and (data.picTime in map(str,range(10)) or data.picTime == ""):
 			data.picTime += "."
 	# if the folder name is being edited, only valid folder names can be entered
 	if data.edit[1]:
@@ -596,6 +596,8 @@ def drawButtons(canvas, data):
 		if i == 2:
 			text2 = "Folder: " + data.folder + piping(data,data.pipe[1])
 			font2 = "Arial 15 bold"
+			corner = right+bwidth+margin+2
+			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,text="Cycle Set",font="Arial 15 bold")
 		if i == 3:
 			if data.quenching: fill = "red"
 			else: fill = "black"
@@ -605,8 +607,6 @@ def drawButtons(canvas, data):
 			if data.running: text2,fill = "End run","red"  
 			else: text2,fill = "Start run","black"
 			font2 = "Arial 20 bold"
-			corner = right+bwidth+margin+2
-			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,text="Cycle Set",font="Arial 15 bold")
 		if i == 4: 
 			text2 = "Take Pictures"
 			if data.hanging:
@@ -776,12 +776,12 @@ def writeCycle(event, data, index, col):
 				# cycle numbers can only be integers
 				else: lst[1][index] = int(lst[0][index])
 		else: data.error = "Must enter valid picture time"
-	elif event.keysym.isdecimal(): 
+	elif event.keysym in map(str,range(10)): 
 		lst[0][index] += event.keysym
 		if len(lst[0][index])>7: lst[0][index] = lst[0][index][:-1]
 	elif event.keysym == "BackSpace": 
 		lst[0][index] = lst[0][index][:-1]
-	elif event.keysym == "period" and (lst[0][index].isdecimal() or lst[0][index] == ""):
+	elif event.keysym == "period" and (lst[0][index] in map(str,range(10)) or lst[0][index] == ""):
 		lst[0][index] += "."
 	else: data.edited = False
 
@@ -832,7 +832,9 @@ def nextCycle(data):
 	data.cIndex += 1
 	# repeats the cycle at the end
 	if data.cIndex > 7:
-		startCycle(data)
+		# startCycle(data)
+		data.cycling = False
+		return
 	data.numCycles = 0
 	# checks that the cycle moves to a non-empty state
 	if data.times[1][data.cIndex] != 0 and data.cycles[1][data.cIndex] != 0:
