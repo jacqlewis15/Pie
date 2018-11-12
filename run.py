@@ -77,7 +77,7 @@ def initQuenching(data):
 	data.quenching = False
 	data.hanging = False
 	data.start = 0
-	data.nextO2 = range(20,0,-1)+[.5,.1,0]
+	data.nextO2 = range(20,10,-2)+range(10,0,-1)+[.5,.1,0]
 	data.count0 = None
 	data.taken = False
 
@@ -383,7 +383,7 @@ def runKeyPressed(event, data):
 	# If the picture time is being edited, only valid times can be entered
 	if data.edit[0]:
 		if event.keysym == "Return": 
-			if float(data.picTime) >= 0.5 and float(data.picTime) <= 100.0: #add time constraints here 
+			if float(data.picTime) >= 0.05 and float(data.picTime) <= 100.0: #add time constraints here 
 				data.edit[0] = False
 				data.pipe[0] = False
 				data.newPicTime = int(float(data.picTime)*60)
@@ -393,8 +393,7 @@ def runKeyPressed(event, data):
 			data.error = ""
 			data.picTime += event.keysym
 			if len(data.picTime)>7: data.picTime = data.picTime[:-1]
-		elif event.keysym == "BackSpace": 
-			data.picTime = data.picTime[:-1]
+		elif event.keysym == "BackSpace": data.picTime = data.picTime[:-1]
 		elif event.keysym == "period" and (data.picTime in map(str,range(10)) or data.picTime == ""):
 			data.picTime += "."
 	# if the folder name is being edited, only valid folder names can be entered
@@ -404,8 +403,7 @@ def runKeyPressed(event, data):
 			data.edit[1] = False
 			data.pipe[1] = False
 			data.picFolder = data.folder
-		elif event.keysym == "BackSpace":
-			data.folder = data.folder[:-1]
+		elif event.keysym == "BackSpace": data.folder = data.folder[:-1]
 		else:
 			data.error = ""
 			data.folder += event.char
@@ -413,7 +411,7 @@ def runKeyPressed(event, data):
 	if data.edit[4]:
 		if event.keysym == "Escape": finishEditing(data,"metadata")
 		elif event.keysym == "BackSpace": data.mEdit = removeChar(data)
-		elif event.keysym == "Left" or event.keysym == "Right":
+		elif event.keysym == "Left" or event.keysym == "Right": 
 			horiz(data,event.keysym)
 		elif event.keysym == "Up" or event.keysym == "Down":
 			vert(data,event.keysym)
@@ -428,7 +426,7 @@ def clearFluff(lst):
 
 def picture(data,address,foldName,letter,picName):
 
-	title = "Total Illumination: " + str(data.illTime/60) + " minutes"
+	title = "Total Illumination: " + str(round(data.illTime/60.0,2)) + " minutes"
 	pressure,oxygen = readData(data)
 	name = address+foldName[-1]+letter+picName
 	subprocess.check_call(["fswebcam","--title",title,"--subtitle",pressure,"--info",oxygen,"--font",'"sans:60"',name,"-r 2592x1944"])
@@ -445,7 +443,9 @@ def picture(data,address,foldName,letter,picName):
 
 def takeAPic(data):
 
-	# develops a name for the picture
+    try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
+    except: pass
+    # develops a name for the picture
     date = time.localtime(time.time())
     picName = time.strftime(":y%ym%md%dH%HM%MS%S.jpg",date)
     address = data.picFolder + "/"
@@ -464,6 +464,7 @@ def takeAPic(data):
     if data.lights == [False]*8: 
         picture(data,address,foldName,"",picName)
     try: 
+        data.ser.write("go")
         data.ser.flushInput()
         print("Buffer Flushed")
     except: pass
@@ -474,6 +475,8 @@ def takeAPic(data):
 
 def takePics(data):
 	
+	try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
+	except: pass
 	# makes sure all lights are off initially
 	for i in range(len(data.pins)):
 		GPIO.output(data.pins[i], data.off)
@@ -495,9 +498,14 @@ def takePics(data):
 		# turn pic lights off
 		GPIO.output(data.picPins[i], data.off)
 	try: 
+		data.ser.write("go")
 		data.ser.flushInput()
 		print("Buffer Flushed")
 	except: pass
+
+
+# def truncate(lst,length):
+# 	return lst[len(lst)-length:]
 
 
 # This function maintains the timing of the system.
@@ -505,32 +513,26 @@ def takePics(data):
 def runTimerFired(data):
 
 	# checks if the amount of time between pictures that was set has passed
-	if data.running:
-		if (time.time() - data.lastPic) >= data.newPicTime:
-			data.illTime += data.newPicTime
-			takePics(data)
-			# turn lights on
-			data.lastPic = time.time()
-			for i in range(len(data.lightPins)):
-				GPIO.output(data.lightPins[i], data.on)
-				data.lights[i] = True
-			if data.cycling: 
-				data.numCycles += 1
-				if data.numCycles >= data.cycles[1][data.cIndex]:
-					nextCycle(data)
-	if data.edit[0]:
-		if data.time % 5 == 0: data.pipe[0] = not data.pipe[0]
-	if data.edit[1]:
-		if data.time % 5 == 0: data.pipe[1] = not data.pipe[1]
-	if data.edit[4]:
-		if data.time % 5 == 0: data.pipe[4] = not data.pipe[4]
-	if data.hanging:
-		if (time.time()-data.start) > 120: 
-			pressLight(data,7)
-			takeAPic(data)
-			pressLight(data,7)
-			data.hanging = False
-			data.nextO2 = filter(lambda x: x < (data.lastO2), data.nextO2)
+	if data.running and ((time.time() - data.lastPic) >= data.newPicTime):
+		data.illTime += data.newPicTime
+		takePics(data)
+		# turn lights on
+		data.lastPic = time.time()
+		for i in range(len(data.lightPins)):
+			GPIO.output(data.lightPins[i], data.on)
+			data.lights[i] = True
+		if data.cycling: 
+			data.numCycles += 1
+			if data.numCycles >= data.cycles[1][data.cIndex]: nextCycle(data)
+	if data.edit[0] and data.time % 5 == 0: data.pipe[0] = not data.pipe[0]
+	if data.edit[1] and data.time % 5 == 0: data.pipe[1] = not data.pipe[1]
+	if data.edit[4] and data.time % 5 == 0: data.pipe[4] = not data.pipe[4]
+	if data.hanging and ((time.time()-data.start) > (data.nextO2[0]*60)): 
+		pressLight(data,7)
+		takeAPic(data)
+		pressLight(data,7)
+		data.hanging = False
+		data.nextO2 = filter(lambda x: x < (data.lastO2), data.nextO2)
 	if data.quenching and len(data.nextO2) < 5 and not data.taken:
 		sensorData = str(data.pressure)[:-2].split(",")
 		if len(sensorData) != 2: sensorData = [""]*2
@@ -543,8 +545,7 @@ def runTimerFired(data):
 					takeAPic(data)
 					pressLight(data,7)
 					data.taken = True
-			else:
-				data.count0 = None
+			else: data.count0 = None
 	# updates the blinking cursor for editing
 	data.time += 1
 
@@ -666,7 +667,7 @@ def readData(data):
 		if data.nextO2 != []:
 			if ((data.nextO2[0] > 1 and data.lastO2 <= (data.nextO2[0]-.7)) or
 					(1 >= data.nextO2[0] > .1 and data.lastO2 <= (data.nextO2[0]-.3))
-						or (data.nextO2 <= .1 and data.lastO2 <= (data.nextO2[0]-.1))):
+						or (data.nextO2 <= .1 and data.lastO2 <= (data.nextO2[0]-.08))):
 				data.start = time.time()
 				print("Hanging")
 				data.hanging = True

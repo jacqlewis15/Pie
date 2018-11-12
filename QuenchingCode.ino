@@ -17,10 +17,11 @@ float RunAverage[10]={0,0,0,0,0,0,0,0,0,0};
 
 const float VRefer = 3.3;       // voltage of adc reference
 const int pinAdc   = A1;        // O2 Sensor
-double calibration = 343; 
+double calibration = 359; 
 // 274 for frankenbox, 290 on raspi
 // 262 for bulb, 271 on raspi
 // 343 for ivy, 359 on raspi
+// 320 for squirtle, 331 on raspi
 bool hanging = false;
 float O2val = 0;
 String bitIn;
@@ -34,7 +35,7 @@ void setup() {
   Serial.println(zeropoint_float); 
    pinMode(GasOutPin, OUTPUT);
    digitalWrite(GasOutPin,LOW);
-  //calibration = calibrate(); // 21???
+  //calibration = calibrate();
   Serial.println("Calibration is:");
   Serial.println(calibration);
 /*
@@ -67,15 +68,17 @@ void loop(void) {
     }
     else if (bitIn == "go") {hanging = false;}
   }
-  pressure_Read();
-  Serial.print(sensorValue);
-  Serial.print(",");
-  O2val = readConcentration();
-  Serial.println(O2val); 
+  
   if (not hanging) {
     //Serial.println(zeropoint_float); 
+    pressure_Read();
+    Serial.print(sensorValue);
+    Serial.print(",");
+    O2val = readConcentration();
+    Serial.println(O2val);
+     
     if (sensorValue < zeropoint_float) {
-      digitalWrite(GasOutPin,LOW);
+      digitalWrite(GasOutPin,LOW); // different for single relays
       
       delay(1000);
     }
