@@ -443,8 +443,9 @@ def picture(data,address,foldName,letter,picName):
 
 def takeAPic(data):
 
-    try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
-    except: pass
+    # try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
+    # except: pass
+
     # develops a name for the picture
     date = time.localtime(time.time())
     picName = time.strftime(":y%ym%md%dH%HM%MS%S.jpg",date)
@@ -463,11 +464,13 @@ def takeAPic(data):
     # no light on has no differentiating letter in pic name
     if data.lights == [False]*8: 
         picture(data,address,foldName,"",picName)
-    try: 
-        data.ser.write("go")
-        data.ser.flushInput()
-        print("Buffer Flushed")
-    except: pass
+
+    # try: 
+    #     data.ser.write("go")
+    #     data.ser.flushInput()
+    #     print("Buffer Flushed")
+    # except: pass
+
     # data.ser.flush()
 
 # This function takes 6 picures of the testing system, one for each
@@ -475,8 +478,9 @@ def takeAPic(data):
 
 def takePics(data):
 	
-	try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
-	except: pass
+	# try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
+	# except: pass
+
 	# makes sure all lights are off initially
 	for i in range(len(data.pins)):
 		GPIO.output(data.pins[i], data.off)
@@ -497,15 +501,12 @@ def takePics(data):
 		picture(data,address,foldName,letter,picName)
 		# turn pic lights off
 		GPIO.output(data.picPins[i], data.off)
-	try: 
-		data.ser.write("go")
-		data.ser.flushInput()
-		print("Buffer Flushed")
-	except: pass
 
-
-# def truncate(lst,length):
-# 	return lst[len(lst)-length:]
+	# try: 
+	# 	data.ser.write("go")
+	# 	data.ser.flushInput()
+	# 	print("Buffer Flushed")
+	# except: pass
 
 
 # This function maintains the timing of the system.
@@ -989,3 +990,10 @@ def runUI(width=300, height=300):
     GPIO.cleanup()
 
 runUI(800, 800)
+
+# make headless version:
+#   take picture every 3 minutes (ish)
+#   put all pics in folder to be downloaded by ssh
+#   no lights, just pictures and folders
+#   start with ssh (look into screen and/or moba xterm)
+#   end with ssh or kill process or something
