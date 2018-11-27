@@ -44,7 +44,9 @@ import Tkinter, Tkconstants, tkFileDialog
 import pyexiv2
 
 
-# file reading/writing from 15-112 
+# file reading/writing from 15-112: 
+# http://www.kosbie.net/cmu/spring-16/15-112/notes/
+#		notes-strings.html#basicFileIO
 
 def writeFile(path, contents):
     with open(path, "wt") as f:
@@ -58,7 +60,10 @@ def readFile(path):
 # UI
 ####################################
 
+# Initial data for each piece of code.
+
 def initRun(data):
+	# for the overall process
 	data.lights = [False]*8 # Number of lights connected
 	data.picTime = "1" 
 	data.edit = [False,False,[False]*8,[False]*8,False] # run and cycle edits
@@ -67,6 +72,7 @@ def initRun(data):
 	data.time = 0
 	data.lastPic = time.time()
 	data.folder = "test"
+	makeFolder("test") # makes the test folder if it does not exist
 	data.running = False
 	data.mode = "run"
 	data.picFolder = data.folder
@@ -74,6 +80,7 @@ def initRun(data):
 	data.illTime = 0
 
 def initQuenching(data):
+	# for the quenching mode
 	data.quenching = False
 	data.hanging = False
 	data.start = 0
@@ -82,7 +89,8 @@ def initQuenching(data):
 	data.taken = False
 
 def initArduino(data):
-	try: 
+	# for the arduino setup
+	try: # if the arduino isn't plugged in, this code won't work
 		data.ser = serial.Serial('/dev/ttyACM0', 9600)
 		data.ser.flushInput()
 	except: data.ser = ""
@@ -112,6 +120,7 @@ def initCycle(data):
 	data.edited = False
 
 def initMeta():
+	# sets the blank metadata
 	lines = [""]*34
 	lines[0] = "Illumination Time:"
 	lines[1] = "Pressure:"
@@ -141,7 +150,11 @@ def init(data):
 # run mode
 ####################################
 
+
+# This function defines the size and specifications of the user interface.
+
 def sizeSpecs(data):
+	# creates a well-spaced UI
 	margin = 20
 	center = data.width/2
 	bheight = (data.height-margin*9)/12
@@ -149,6 +162,7 @@ def sizeSpecs(data):
 	left = center/2-bwidth/4-margin
 	right = center*3/2-bwidth*3/4+margin
 	return margin,center,bheight,bwidth,left,right
+
 
 # When the user presses any of the buttons on the left side of the UI
 # this function will operate the lights and cause the UI to display
@@ -205,34 +219,41 @@ def press(data, index):
 			for i in range(len(data.pins)):
 				GPIO.output(data.pins[i], data.off)
 				data.lights[i] = False
+	# can't take pictures during run
 	if index == 4 and not data.running: takePics(data)
 	if index == 5 and not data.running and not data.lights[0]: takeAPic(data)
 	if index == 10: data.mode = "setCycle"
 	if index == 11: 
 		data.quenching = not data.quenching
-		if not data.quenching: initQuenching(data)
+		if not data.quenching: initQuenching(data) # resets data
 
+
+# This function allows the user to choose a file from a pop-up browser.
 
 def fileExplorer():
-    location = os.getcwd()
+    location = os.getcwd() # chooses a start folder for the browser
     name = tkFileDialog.askopenfilename(initialdir = location,
         title = "Select file",filetypes = (("TEXT","*.txt"),("all files","*.*")))
-    if name == (): name = ""
+    if name == (): name = "" # prevents type error
     return name
 
+
+# This function returns the contents of a file chosen by fileExplorer.
+
 def convToMeta(file):
-	if file == "": 
+	if file == "": # ensures the file exists
 		return None
 	else:
 		contents = readFile(file)
 		return contents
 
+
 # This function reacts to mouse clicks and reacts if a button is pressed.
 
 def runMousePressed(event, data):
 	
+	# defines sizing specifications
 	margin,center,bheight,bwidth,left,right = sizeSpecs(data)
-
 	index = int((event.y-bheight)//(margin+bheight))
 	top = bheight+index*(margin+bheight)
 	column = ((2*margin+2*bwidth)//6)
@@ -250,12 +271,14 @@ def runMousePressed(event, data):
 		if event.y > bheight and event.y < (bheight*4+margin*2):
 			if not data.edit[0] and not data.edit[1]:
 				data.edit[4] = True
+				# finds where to start the cursor
 				idx = int((event.y-bheight)//((bheight*3+margin*2)//12))
 				if event.x > center+column: idx += 26
 				elif event.x > center-column: idx += 13
 				lines = data.metadata.split("\n")
 				if len(lines) <= idx: idx = len(lines)-1
 				data.index = (idx,len(lines[idx]))
+	# metadata button
 	if event.x > center-bwidth//2 and event.x < center+bwidth//2:
 		if event.y > 10 and event.y < bheight-10:
 			if not data.edit[0] and not data.edit[1] and not data.edit[4]:
@@ -269,7 +292,7 @@ def runMousePressed(event, data):
 			press(data,11)
 
 
-# These functions determine if a path is a folder or a file.
+# These functions determine if a path is a valid folder or file.
 
 def isValidFolder(folder):
 	return os.path.isdir(folder)
@@ -286,7 +309,9 @@ def makeFolder(foldName):
 		if not isValidFolder("/".join(folders[:i+1])):
 			subprocess.check_call(["mkdir","/".join(folders[:i+1])])
 
+
 # This function backspaces out the character before the cursor in the metadata.
+
 def removeChar(data):
     # determines which line of the multiline metadata is being edited
     lines = data.mEdit.split("\n")
@@ -312,8 +337,11 @@ def removeChar(data):
         else: lines = lines[:idx1-1]+[newLine]
     return "\n".join(lines)
 
+
 # This function adds a character to the metadata.
+
 def addChar(data,event):
+    # determines which line is being edited
     lines = data.mEdit.split("\n")
     idx1,idx2 = data.index
     line = lines[idx1]
@@ -327,7 +355,9 @@ def addChar(data,event):
     else: data.index = (data.index[0],data.index[1]+1)
     return "\n".join(lines)
 
+
 # This function moves the cursor horizontally in metadata editing mode.
+
 def horiz(data,direction):
     lines = data.mEdit.split("\n")
     if direction == "Left":
@@ -344,7 +374,9 @@ def horiz(data,direction):
             index = data.index[0]+1
             data.index = (index,0)
 
+
 # This function moves the cursor vertically in metadata editing mode.
+
 def vert(data,direction):
     lines = data.mEdit.split("\n")
     if direction == "Up":
@@ -383,20 +415,23 @@ def runKeyPressed(event, data):
 	# If the picture time is being edited, only valid times can be entered
 	if data.edit[0]:
 		if event.keysym == "Return": 
-			if float(data.picTime) >= 0.05 and float(data.picTime) <= 100.0: #add time constraints here 
+			# time constraints of picture interval
+			if float(data.picTime) >= 0.05 and float(data.picTime) <= 100.0:  
 				data.edit[0] = False
 				data.pipe[0] = False
 				data.newPicTime = int(float(data.picTime)*60)
 				data.cycling = False
 			else: data.error = "Must enter valid picture time"
+		# ensures valid keystrokes
 		elif event.keysym in map(str,range(10)): 
 			data.error = ""
 			data.picTime += event.keysym
 			if len(data.picTime)>7: data.picTime = data.picTime[:-1]
 		elif event.keysym == "BackSpace": data.picTime = data.picTime[:-1]
-		elif event.keysym == "period" and (data.picTime in map(str,range(10)) or data.picTime == ""):
+		elif event.keysym == "period" and (data.picTime in map(str,range(10))
+				or data.picTime == ""):
 			data.picTime += "."
-	# if the folder name is being edited, only valid folder names can be entered
+	# if the folder name is being edited only valid folder names can be entered
 	if data.edit[1]:
 		if event.keysym == "Return":
 			makeFolder(data.folder)
@@ -408,6 +443,7 @@ def runKeyPressed(event, data):
 			data.error = ""
 			data.folder += event.char
 		if len(data.folder) > 18: data.folder = data.folder[:-1]
+	# editing metadata
 	if data.edit[4]:
 		if event.keysym == "Escape": finishEditing(data,"metadata")
 		elif event.keysym == "BackSpace": data.mEdit = removeChar(data)
@@ -419,32 +455,36 @@ def runKeyPressed(event, data):
 
 
 # This function returns a list with no empty string elements.
+
 def clearFluff(lst):
     return [x for x in lst if x != ""]
+
 
 # This function takes the picture and writes data onto it.
 
 def picture(data,address,foldName,letter,picName):
 
-	title = "Total Illumination: " + str(round(data.illTime/60.0,2)) + " minutes"
+	# creates writing on the picture and metadata to convey information
+	title = ("Total Illumination: " + 
+		str(round(data.illTime/60.0,2)) + " minutes")
 	pressure,oxygen = readData(data)
 	name = address+foldName[-1]+letter+picName
-	subprocess.check_call(["fswebcam","--title",title,"--subtitle",pressure,"--info",oxygen,"--font",'"sans:60"',name,"-r 2592x1944"])
+	subprocess.check_call(["fswebcam","--title",title,"--subtitle",pressure,
+		"--info",oxygen,"--font",'"sans:60"',name,"-r 2592x1944"])
 	metadata = pyexiv2.ImageMetadata(name)
 	metadata.read()
 	userdata = "\n".join(clearFluff(data.metadata.split("\n")))
 	userdata = (pressure).join(userdata.split("Pressure:"))
 	userdata = (oxygen).join(userdata.split("Oxygen:"))
 	userdata = (title).join(userdata.split("Illumination Time:"))
-	metadata['Exif.Image.XPComment']=pyexiv2.utils.string_to_undefined(userdata.encode('utf-16'))
+	metadata['Exif.Image.XPComment'] = (
+		pyexiv2.utils.string_to_undefined(userdata.encode('utf-16')))
 	metadata.write()
 
-# This function takes a single picture of the testing system
+
+# This function takes a single picture of the testing system.
 
 def takeAPic(data):
-
-    # try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
-    # except: pass
 
     # develops a name for the picture
     date = time.localtime(time.time())
@@ -465,21 +505,11 @@ def takeAPic(data):
     if data.lights == [False]*8: 
         picture(data,address,foldName,"",picName)
 
-    # try: 
-    #     data.ser.write("go")
-    #     data.ser.flushInput()
-    #     print("Buffer Flushed")
-    # except: pass
-
-    # data.ser.flush()
 
 # This function takes 6 picures of the testing system, one for each
 # different picture light available.
 
 def takePics(data):
-	
-	# try: data.ser.write("wait") # stops the arduino during picture (does it stop picture failure?)
-	# except: pass
 
 	# makes sure all lights are off initially
 	for i in range(len(data.pins)):
@@ -502,12 +532,6 @@ def takePics(data):
 		# turn pic lights off
 		GPIO.output(data.picPins[i], data.off)
 
-	# try: 
-	# 	data.ser.write("go")
-	# 	data.ser.flushInput()
-	# 	print("Buffer Flushed")
-	# except: pass
-
 
 # This function maintains the timing of the system.
 
@@ -525,21 +549,25 @@ def runTimerFired(data):
 		if data.cycling: 
 			data.numCycles += 1
 			if data.numCycles >= data.cycles[1][data.cIndex]: nextCycle(data)
+	# flashes the cursor if in edit mode
 	if data.edit[0] and data.time % 5 == 0: data.pipe[0] = not data.pipe[0]
 	if data.edit[1] and data.time % 5 == 0: data.pipe[1] = not data.pipe[1]
 	if data.edit[4] and data.time % 5 == 0: data.pipe[4] = not data.pipe[4]
+	# takes a quenching photo at the proper time according to the pattern
 	if data.hanging and ((time.time()-data.start) > (data.nextO2[0]*60)): 
 		pressLight(data,7)
 		takeAPic(data)
 		pressLight(data,7)
 		data.hanging = False
 		data.nextO2 = filter(lambda x: x < (data.lastO2), data.nextO2)
+	# stops arduino during picture wait
 	if data.quenching and len(data.nextO2) < 5 and not data.taken:
 		sensorData = str(data.pressure)[:-2].split(",")
 		if len(sensorData) != 2: sensorData = [""]*2
 		if sensorData[1] != "": 
 			if float(sensorData[1]) == 0 and data.count0 == None:
 				data.count0 = time.time()
+			# takes final 0 picture
 			elif float(sensorData[1]) <= 0.2 and data.count0 != None:
 				if time.time()-data.count0 > 300 and float(sensorData[1]) == 0:
 					pressLight(data,7)
@@ -581,7 +609,8 @@ def drawButtons(canvas, data):
 		canvas.create_rectangle(left,top,left+bwidth,bottom,fill="lightgray")
 		if (i == 1 or i == 2): color="lightblue"
 		else: color="lightgray"
-		canvas.create_text(left+bwidth/2,top+bheight/2,text=text,font="Arial 20 bold")
+		canvas.create_text(left+bwidth/2,top+bheight/2,text=text,
+			font="Arial 20 bold")
 		canvas.create_rectangle(right,top,right+bwidth,bottom,fill=color)    
 		fill="black"
 		if i == 0: 
@@ -590,22 +619,28 @@ def drawButtons(canvas, data):
 		if i == 1:
 			if data.picTime == "1": mins = " minute"
 			else: mins = " minutes"
-			text2 = "Pic Time: " + data.picTime + piping(data,data.pipe[0]) + mins
+			text2 = ("Pic Time: " + data.picTime + 
+				piping(data,data.pipe[0]) + mins)
 			font2 = "Arial 15 bold"
 			corner = right+bwidth+margin
-			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,fill="lightgray")
-			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Set\nCycle",font="Arial 15 bold")
+			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,
+				fill="lightgray")
+			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Set\nCycle",
+				font="Arial 15 bold")
 		if i == 2:
 			text2 = "Folder: " + data.folder + piping(data,data.pipe[1])
 			font2 = "Arial 15 bold"
 			corner = right+bwidth+margin+2
-			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,text="Cycle Set",font="Arial 15 bold")
+			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,
+				text="Cycle Set",font="Arial 15 bold")
 		if i == 3:
 			if data.quenching: fill = "red"
 			else: fill = "black"
 			corner = right+bwidth+margin
-			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,fill="lightgray")
-			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Quench",font="Arial 10 bold",fill=fill)
+			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,
+				fill="lightgray")
+			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Quench",
+				font="Arial 10 bold",fill=fill)
 			if data.running: text2,fill = "End run","red"  
 			else: text2,fill = "Start run","black"
 			font2 = "Arial 20 bold"
@@ -613,9 +648,11 @@ def drawButtons(canvas, data):
 			text2 = "Take Pictures"
 			if data.hanging:
 				corner = right+bwidth+margin
-				canvas.create_text(corner+5,(bottom-top)/2+top,anchor="w",text="Hanging",font="Arial 10 bold")
+				canvas.create_text(corner+5,(bottom-top)/2+top,anchor="w",
+					text="Hanging",font="Arial 10 bold")
 		if i == 5: text2 = "Take a Picture"
-		canvas.create_text(right+bwidth/2,top+bheight/2,text=text2,font=font2,fill=fill)
+		canvas.create_text(right+bwidth/2,top+bheight/2,text=text2,font=font2,
+			fill=fill)
 
 
 # This function creates the clocks visible at the bottom of the
@@ -633,6 +670,7 @@ def drawTimes(canvas, data):
     # draws the clocks when running
     if data.running:
         tim = time.time()-data.startTime
+        # calculates time stamps
         m,s = divmod(tim,60)
         h,m = divmod(m,60)
         text = ("Time running: " + "%d:%02d:%02d") % (h,m,s)
@@ -640,10 +678,16 @@ def drawTimes(canvas, data):
         m,s = divmod(tim,60)
         h,m = divmod(m,60)
         text2 = ("Next pic in: " + "%d:%02d:%02d") % (h,m,s)
-        canvas.create_text(right+bwidth/2,top+bheight/2,text=text,font="Arial 15 bold")
+        # draws clock
+        canvas.create_text(right+bwidth/2,top+bheight/2,text=text,
+        	font="Arial 15 bold")
         canvas.create_rectangle(right,top,right+bwidth,bottom)
-        canvas.create_text(left+bwidth/2,top+bheight/2,text=text2,font="Arial 15 bold")
+        canvas.create_text(left+bwidth/2,top+bheight/2,text=text2,
+        	font="Arial 15 bold")
         canvas.create_rectangle(left,top,left+bwidth,bottom)
+
+
+# This function computes the average of a list and rounds it.
 
 def average(lst):
 	total = 0
@@ -651,29 +695,38 @@ def average(lst):
 		total += lst[i]
 	return round(total/(len(lst)),2)
 
+
+# This function translates raw pressure and oxygen data into legible 
+# information.
+
 def readData(data):
 
 	sensorData = str(data.pressure)[:-2].split(",")
+	# ensures partial data is not parsed
 	if len(sensorData) != 2: sensorData = [""]*2
+	# does not update to out-of-bounds values
 	if sensorData[0] != "" and (500 < float(sensorData[0]) < 1020):
 		data.lastPressure = sensorData[0]
 	text = "Pressure: " + str(data.lastPressure)
+	# computes oxygen values at valid pressures
 	if sensorData[0] != "" and float(sensorData[0]) < 800:
 		data.O2vals.append(float(sensorData[1]))
 		if len(data.O2vals) == 15:
 			data.lastO2 = average(data.O2vals)
 			data.O2vals = []
 	text2 = "Oxygen: " + str(data.lastO2)
+	# checks if the arduino should stop during quench experiments
 	if (not data.hanging) and data.quenching and sensorData[1] != "":
 		if data.nextO2 != []:
 			if ((data.nextO2[0] > 1 and data.lastO2 <= (data.nextO2[0]-.7)) or
-					(1 >= data.nextO2[0] > .1 and data.lastO2 <= (data.nextO2[0]-.3))
-						or (data.nextO2 <= .1 and data.lastO2 <= (data.nextO2[0]-.08))):
+					(1 >= data.nextO2[0] > .1 and data.lastO2 <= 
+						(data.nextO2[0]-.3)) or (data.nextO2 <= .1 and 
+							data.lastO2 <= (data.nextO2[0]-.08))):
 				data.start = time.time()
 				print("Hanging")
 				data.hanging = True
-
 	return text,text2
+
 
 # This function connects to the Arduino and prints the pressure output.
 
@@ -690,7 +743,7 @@ def drawSensors(canvas, data):
 			data.pressure = data.ser.readline()
 			data.ser.flushInput()
 		except: 
-			try: 
+			try: # if arduino connected but not initialized
 				data.ser = serial.Serial('/dev/ttyACM0', 9600)
 				if data.hanging: data.ser.write("wait")
 				else: data.ser.write("go")
@@ -699,29 +752,38 @@ def drawSensors(canvas, data):
 			except: 
 				data.ser = ""
 				data.pressure = ""
-
+	# displays pressure and oxygen values
 	text,text2 = readData(data)
-	canvas.create_text(left+bwidth/2,data.height-bheight/4,text=text,font="Arial 20 bold")
-	canvas.create_text(right+bwidth/2,data.height-bheight/4,text=text2,font="Arial 20 bold")
+	canvas.create_text(left+bwidth/2,data.height-bheight/4,text=text,
+		font="Arial 20 bold")
+	canvas.create_text(right+bwidth/2,data.height-bheight/4,text=text2,
+		font="Arial 20 bold")
 
+
+# This function displays the metadata in the top box.
 
 def drawMeta(canvas, data):
+	# initializes size and editing data
 	margin,center,bheight,bwidth,left,right = sizeSpecs(data)
-
 	text = data.mEdit
 	text1 = ""
 	text2 = ""
 	pipe = ""
 	# adds the blinking cursor to the correct space in the header
 	if data.edit[4]: 
-		canvas.create_text(center,.5*bheight,text="Press escape to end edit",font="Arial 20 bold")
+		canvas.create_text(center,.5*bheight,text="Press escape to end edit",
+			font="Arial 20 bold")
 		if data.pipe[4]: pipe = "|"
 		else: pipe = " "
 	else:
-		canvas.create_rectangle(center-bwidth//2,10,center+bwidth//2,bheight-10,fill="lightgray")
-		canvas.create_text(center,.5*bheight,text="Import Metadata",font="Arial 15 bold")
+		# if not editing, the button appears
+		canvas.create_rectangle(center-bwidth//2,10,center+bwidth//2,
+			bheight-10,fill="lightgray")
+		canvas.create_text(center,.5*bheight,text="Import Metadata",
+			font="Arial 15 bold")
 	lines = text.split("\n")
 	if len(lines) == 0: text = pipe
+	# writes lines appropriately
 	else:
 		line = lines[data.index[0]]
 		if data.index[1] < len(line):
@@ -736,11 +798,15 @@ def drawMeta(canvas, data):
 			text = "\n".join(lines[:13])
 			text1 = "\n".join(lines[13:])
 		else: text = "\n".join(lines)
-
+	# draws all text 
 	canvas.create_rectangle(left,bheight,right+bwidth,bheight*4+margin*2)
-	canvas.create_text(left+5,bheight,text=text,font="Arial 10 bold",anchor="nw")
-	canvas.create_text(center+5-(2*margin+2*bwidth)//6,bheight,text=text1,font="Arial 10 bold",anchor="nw")
-	canvas.create_text(center+5+(2*margin+2*bwidth)//6,bheight,text=text2,font="Arial 10 bold",anchor="nw")
+	canvas.create_text(left+5,bheight,text=text,font="Arial 10 bold",
+		anchor="nw")
+	canvas.create_text(center+5-(2*margin+2*bwidth)//6,bheight,text=text1,
+		font="Arial 10 bold",anchor="nw")
+	canvas.create_text(center+5+(2*margin+2*bwidth)//6,bheight,text=text2,
+		font="Arial 10 bold",anchor="nw")
+
 
 # This function draws the UI every frame.
 
@@ -751,25 +817,29 @@ def runRedrawAll(canvas, data):
     drawTimes(canvas, data)
     drawSensors(canvas,data)
     drawMeta(canvas,data)
-    canvas.create_text(data.width/2,20,text=data.error,font="Arial 20 bold",fill="red")
+    canvas.create_text(data.width/2,20,text=data.error,font="Arial 20 bold",
+    	fill="red")
 
 
 ####################################
 # setCycle mode
 ####################################
 
-# This function edits the cycle system when editing.
+
+# This function edits the cycle system in setCycle mode.
 
 def writeCycle(event, data, index, col):
 
 	data.error = ""
-	data.edited = True # allows the user to look at the cycle without resetting it
+	data.edited = True 
 	if col == 2: lst = data.times
 	if col == 3: lst = data.cycles
 
 	# verifies that any data entered is within the allowable limits
 	if event.keysym == "Return": 
-		if lst[0][index] == "" or (float(lst[0][index]) >= 0.5 and float(lst[0][index]) <= 100.0): #add time constraints here 
+		# sets time constraints for inputs
+		if lst[0][index] == "" or (float(lst[0][index]) >= 0.5 and 
+				float(lst[0][index]) <= 100.0):  
 			data.edit[col][index] = False
 			data.pipe[col][index] = False
 			if lst[0][index] == "": lst[1][index] = 0
@@ -778,6 +848,7 @@ def writeCycle(event, data, index, col):
 				# cycle numbers can only be integers
 				else: lst[1][index] = int(lst[0][index])
 		else: data.error = "Must enter valid picture time"
+	# allowable keystrokes
 	elif event.keysym in map(str,range(10)): 
 		lst[0][index] += event.keysym
 		if len(lst[0][index])>7: lst[0][index] = lst[0][index][:-1]
@@ -785,6 +856,7 @@ def writeCycle(event, data, index, col):
 		lst[0][index] = lst[0][index][:-1]
 	elif event.keysym == "period" and (lst[0][index] in map(str,range(10)) or lst[0][index] == ""):
 		lst[0][index] += "."
+	# allows the user to look at the cycle w/o resetting it
 	else: data.edited = False
 
 
@@ -792,6 +864,7 @@ def writeCycle(event, data, index, col):
 
 def setCycleMousePressed(event, data):
 
+	# size info
 	margin = 20
 	center = data.width/2
 	bheight = data.height/9
@@ -832,9 +905,8 @@ def startCycle(data):
 def nextCycle(data):
 
 	data.cIndex += 1
-	# repeats the cycle at the end
+	# stops the cycle at the end
 	if data.cIndex > 7:
-		# startCycle(data)
 		data.cycling = False
 		return
 	data.numCycles = 0
@@ -855,9 +927,13 @@ def setCycleKeyPressed(event, data):
 	# returns to the main screen if all inputs are valid and complete
 	if (event.keysym) == "Escape":
 		for i in range(8):
-			if data.edit[2][i] or data.edit[3][i]: data.error = "Must complete edit"
-			elif data.times[0][i] != "" and data.cycles[0][i] == "": data.error = "Must complete edit"
-			elif data.times[0][i] == "" and data.cycles[0][i] != "": data.error = "Must complete edit"
+			if data.edit[2][i] or data.edit[3][i]: 
+				data.error = "Must complete edit"
+			elif data.times[0][i] != "" and data.cycles[0][i] == "": 
+				data.error = "Must complete edit"
+			elif data.times[0][i] == "" and data.cycles[0][i] != "": 
+				data.error = "Must complete edit"
+		# if no errors were generated, exits edit
 		if data.error == "": 
 			data.mode = "run"
 			if data.edited and data.times[0] != [""]*8:
@@ -869,7 +945,8 @@ def setCycleKeyPressed(event, data):
 				except: pass
 
 
-# This function updates every clock cycle and takes pictures at intervals.
+# This function maintains the picture timing of the run function even during
+# the editing process of the cycle.
 
 def setCycleTimerFired(data):
 
@@ -947,6 +1024,8 @@ def redrawAll(canvas, data):
 
 ####################################
 # runUI function # from 15-112 #
+# http://www.kosbie.net/cmu/spring-16/15-112/notes/
+#		notes-animations-examples.html#modeDemo
 ####################################
 
 def runUI(width=300, height=300):
@@ -990,10 +1069,3 @@ def runUI(width=300, height=300):
     GPIO.cleanup()
 
 runUI(800, 800)
-
-# make headless version:
-#   take picture every 3 minutes (ish)
-#   put all pics in folder to be downloaded by ssh
-#   no lights, just pictures and folders
-#   start with ssh (look into screen and/or moba xterm)
-#   end with ssh or kill process or something
