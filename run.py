@@ -20,6 +20,8 @@
 #		check that camera works: from command line, input fswebcam "image.jpg"
 #       pyexiv2:
 #       >>> sudo apt-get install python-pyexiv2
+#       adc:
+#       >>> sudo pip install Adafruit_ADS1x15
 # 5. (Optional) to run from startup, edit /etc/rc.local (before the exit command)
 #		python /home/pi/<path to file>/run.py &
 
@@ -30,11 +32,25 @@
 
 
 # This file defines the user interface and operation of a photoreactor,
-# designed for use in the Bernhard Lab.
+# designed for use in the Bernhard Lab. The companion file 
+# calibrate_adc.py can be used to calibrate the sensors to provide 
+# accurate readings.
+
+# Features:
+# - runs photoreaction with/without illumination
+# 	- takes pictures under different lights at a designated interval
+#	- specified metadata is added to each picture in addition to
+#	  writing on the picture itself
+#	- all data is saved to a file designated by the user
+# 	- supports cycle functionality where picture time will change based on 
+#	  input from the user 
+# - runs quenching experiment where pictures are taken at approx. each
+#	oxygen percentage change
+# - metadata can be updated through an external file 
+# - degases the system
 
 
 import RPi.GPIO as GPIO
-import serial
 import string
 import time
 import os
@@ -42,7 +58,9 @@ import subprocess
 from Tkinter import *
 import Tkinter, Tkconstants, tkFileDialog
 import pyexiv2
+# from picamera import PiCamera
 
+import Adafruit_ADS1x15 as ads1x15
 
 # file reading/writing from 15-112: 
 # http://www.kosbie.net/cmu/spring-16/15-112/notes/
@@ -78,6 +96,7 @@ def initRun(data):
 	data.picFolder = data.folder
 	data.newPicTime = int(float(data.picTime)*60)
 	data.illTime = 0
+	data.noLight = False
 
 def initQuenching(data):
 	# for the quenching mode
@@ -88,16 +107,21 @@ def initQuenching(data):
 	data.count0 = None
 	data.taken = False
 
-def initArduino(data):
-	# for the arduino setup
-	try: # if the arduino isn't plugged in, this code won't work
-		data.ser = serial.Serial('/dev/ttyACM0', 9600)
-		data.ser.flushInput()
-	except: data.ser = ""
+def initADC(data):
+	# for the adc setup
+	# bulbasaur: ADS1115
+	# ivysaur: ADS1015
+	data.adc = ads1x15.ADS1015()
+	# bulbasaur: (0.07777,0.001289),(21500,1300)
+	# ivysaur: (1,0.030511),(1300,1300)
+	data.cal = (1,0.030511) # for each ndew adc/pi/sensor, calibrate.py
+	data.zero = (1300,1300) # read value, desired value
 	data.pressure = "----"
 	data.O2vals = []
 	data.lastO2 = 0
 	data.lastPressure = 0
+	data.pZero = 1523
+	data.degas = False
 
 def initPins(data):
 	# Initializes Raspberry Pi to communicate with relay board
@@ -105,12 +129,15 @@ def initPins(data):
 	data.pins = [4,17,27,22,5,6,13,19]
 	data.lightPins = data.pins[:2]
 	data.picPins = data.pins[2:]
+	data.gasPin = 25
 	GPIO.setup(data.pins, GPIO.OUT)
+	GPIO.setup(data.gasPin, GPIO.OUT)
 	data.off = GPIO.HIGH
 	data.on = GPIO.LOW
 
 	for pin in data.pins:
 		GPIO.output(pin, data.off)
+	GPIO.output(data.gasPin, data.off)
 
 def initCycle(data):
 	# Initializes cycles
@@ -134,13 +161,18 @@ def initMeta():
 def init(data):
 	# Initialization of user interface
 	initRun(data)
-	initArduino(data)
+	initADC(data)
 	initQuenching(data)
 
 	# Metadata editing
 	data.index = (0,0)
 	data.mEdit = initMeta()
 	data.metadata = initMeta()
+
+	# camera init
+	# data.camera = PiCamera()
+	# data.camera.annotate_text_size = 64
+	# data.camera.resolution = (2592, 1944)
 
 	initCycle(data)
 	initPins(data)
@@ -207,9 +239,10 @@ def press(data, index):
 			data.illTime = 0
 			data.lastPic = time.time()
 			data.startTime = time.time()
-			for i in range(len(data.lightPins)):
-				GPIO.output(data.lightPins[i], data.on)
-				data.lights[i] = True
+			if not data.noLight:
+				for i in range(len(data.lightPins)):
+					GPIO.output(data.lightPins[i], data.on)
+					data.lights[i] = True
 			for i in range(len(data.picPins)):
 				GPIO.output(data.picPins[i], data.off)
 				data.lights[i+2] = False
@@ -223,9 +256,20 @@ def press(data, index):
 	if index == 4 and not data.running: takePics(data)
 	if index == 5 and not data.running and not data.lights[0]: takeAPic(data)
 	if index == 10: data.mode = "setCycle"
-	if index == 11: 
+	if index == 11: # quenching button
 		data.quenching = not data.quenching
 		if not data.quenching: initQuenching(data) # resets data
+	if index == 12: data.degas = not data.degas
+	if index == 13: data.noLight = not data.noLight
+
+
+def gasOn(data):
+	# turn gas on
+	GPIO.output(data.gasPin, data.on)
+
+def gasOff(data):
+	# turn gas off
+	GPIO.output(data.gasPin, data.off)
 
 
 # This function allows the user to choose a file from a pop-up browser.
@@ -286,10 +330,14 @@ def runMousePressed(event, data):
 				if contents != None: data.metadata,data.mEdit = contents,contents
 	# far right clicks
 	if event.x > right+bwidth+margin and event.x < right+bwidth*5/4+margin:
+		if event.y > bheight+3*(margin+bheight) and event.y < 2*bheight+3*(margin+bheight):
+			press(data, 12)
 		if event.y > bheight+4*(margin+bheight) and event.y < 2*bheight+4*(margin+bheight):
 			press(data, 10)
 		if event.y > bheight+6*(margin+bheight) and event.y < 2*bheight+6*(margin+bheight):
-			press(data,11)
+			press(data, 11)
+		if event.y > bheight+8*(margin+bheight) and event.y < 2*bheight+8*(margin+bheight):
+			press(data, 13)
 
 
 # These functions determine if a path is a valid folder or file.
@@ -469,6 +517,8 @@ def picture(data,address,foldName,letter,picName):
 		str(round(data.illTime/60.0,2)) + " minutes")
 	pressure,oxygen = readData(data)
 	name = address+foldName[-1]+letter+picName
+	# data.camera.annotate_text = title + "\n" + pressure + "\n" + oxygen
+	# data.camera.capture(name)
 	subprocess.check_call(["fswebcam","--title",title,"--subtitle",pressure,
 		"--info",oxygen,"--font",'"sans:60"',name,"-r 2592x1944"])
 	metadata = pyexiv2.ImageMetadata(name)
@@ -539,13 +589,14 @@ def runTimerFired(data):
 
 	# checks if the amount of time between pictures that was set has passed
 	if data.running and ((time.time() - data.lastPic) >= data.newPicTime):
-		data.illTime += data.newPicTime
+		if not data.noLight: data.illTime += data.newPicTime
 		takePics(data)
 		# turn lights on
 		data.lastPic = time.time()
-		for i in range(len(data.lightPins)):
-			GPIO.output(data.lightPins[i], data.on)
-			data.lights[i] = True
+		if not data.noLight:
+			for i in range(len(data.lightPins)):
+				GPIO.output(data.lightPins[i], data.on)
+				data.lights[i] = True
 		if data.cycling: 
 			data.numCycles += 1
 			if data.numCycles >= data.cycles[1][data.cIndex]: nextCycle(data)
@@ -560,22 +611,19 @@ def runTimerFired(data):
 		pressLight(data,7)
 		data.hanging = False
 		data.nextO2 = filter(lambda x: x < (data.lastO2), data.nextO2)
-	# stops arduino during picture wait
+	# stops gas during picture wait
 	if data.quenching and len(data.nextO2) < 5 and not data.taken:
-		sensorData = str(data.pressure)[:-2].split(",")
-		if len(sensorData) != 2: sensorData = [""]*2
-		if sensorData[1] != "": 
-			if float(sensorData[1]) == 0 and data.count0 == None:
-				data.count0 = time.time()
-			# takes final 0 picture
-			elif float(sensorData[1]) <= 0.2 and data.count0 != None:
-				if time.time()-data.count0 > 300 and float(sensorData[1]) == 0:
-					pressLight(data,7)
-					takeAPic(data)
-					pressLight(data,7)
-					data.taken = True
-			else: data.count0 = None
-	# updates the blinking cursor for editing
+		if data.pressure[1] == 0 and data.count0 == None:
+			data.count0 = time.time()
+		# takes final 0 picture
+		elif data.pressure[1] <= 0.2 and data.count0 != None:
+			if time.time()-data.count0 > 300 and data.pressure[1] == 0:
+				pressLight(data,7)
+				takeAPic(data)
+				pressLight(data,7)
+				data.taken = True
+		else: data.count0 = None
+	# updates the timer for repetitive actions
 	data.time += 1
 
 
@@ -606,53 +654,53 @@ def drawButtons(canvas, data):
 		text = lights[i]+" Light "+ isOn(data,i+2)
 		top = bheight+(3+i)*margin+(3+i)*bheight
 		bottom = top+bheight
+		corner = right+bwidth+margin
 		canvas.create_rectangle(left,top,left+bwidth,bottom,fill="lightgray")
-		if (i == 1 or i == 2): color="lightblue"
-		else: color="lightgray"
 		canvas.create_text(left+bwidth/2,top+bheight/2,text=text,
 			font="Arial 20 bold")
-		canvas.create_rectangle(right,top,right+bwidth,bottom,fill=color)    
-		fill="black"
+		if (i == 1 or i == 2): color="lightblue"
+		else: color="lightgray"
+		canvas.create_rectangle(right,top,right+bwidth,bottom,fill=color)
+		if i != 2 and i != 4: canvas.create_rectangle(corner,top,
+			corner+bwidth/4,bottom,fill="lightgray")    
+		fill2=fill3="black"
+		font2 = font3 = "Arial 15 bold"
+		text3 = ""
 		if i == 0: 
 			text2 = "Illumination " + isOn(data,0)
 			font2 = "Arial 20 bold"
+			if data.degas: fill3 = "red"
+			text3 = "Degas"
 		if i == 1:
 			if data.picTime == "1": mins = " minute"
 			else: mins = " minutes"
-			text2 = ("Pic Time: " + data.picTime + 
-				piping(data,data.pipe[0]) + mins)
-			font2 = "Arial 15 bold"
-			corner = right+bwidth+margin
-			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,
-				fill="lightgray")
-			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Set\nCycle",
-				font="Arial 15 bold")
+			text2 = ("Pic Time: "+data.picTime+piping(data,data.pipe[0])+mins)
+			text3 = "Set\nCycle"
 		if i == 2:
 			text2 = "Folder: " + data.folder + piping(data,data.pipe[1])
-			font2 = "Arial 15 bold"
-			corner = right+bwidth+margin+2
-			if data.cycling: canvas.create_text(corner+bwidth/8,top+bheight/2,
-				text="Cycle Set",font="Arial 15 bold")
+			if data.cycling: text3 = "Cycle Set"
 		if i == 3:
-			if data.quenching: fill = "red"
-			else: fill = "black"
-			corner = right+bwidth+margin
-			canvas.create_rectangle(corner,top,corner+bwidth/4,bottom,
-				fill="lightgray")
-			canvas.create_text(corner+bwidth/8,top+bheight/2,text="Quench",
-				font="Arial 10 bold",fill=fill)
-			if data.running: text2,fill = "End run","red"  
-			else: text2,fill = "Start run","black"
+			if data.running: text2,fill2 = "End run","red"  
+			else: text2,fill2 = "Start run","black"
 			font2 = "Arial 20 bold"
+			if data.quenching: fill3 = "red"
+			else: fill3 = "black"
+			font3 = "Arial 12 bold"
+			text3 = "Quench"
 		if i == 4: 
 			text2 = "Take Pictures"
-			if data.hanging:
-				corner = right+bwidth+margin
-				canvas.create_text(corner+5,(bottom-top)/2+top,anchor="w",
-					text="Hanging",font="Arial 10 bold")
-		if i == 5: text2 = "Take a Picture"
+			if data.hanging: text3 = "Hanging"
+			font3 = "Arial 10 bold"
+		if i == 5: 
+			text2 = "Take a Picture"
+			if data.noLight: fill3 = "red"
+			text3 = "No\nLight"
+			font3 = "Arial 12 bold"
+
 		canvas.create_text(right+bwidth/2,top+bheight/2,text=text2,font=font2,
-			fill=fill)
+			fill=fill2)
+		canvas.create_text(corner+2+bwidth/8,top+bheight/2,text=text3,
+				font=font3,fill=fill3)
 
 
 # This function creates the clocks visible at the bottom of the
@@ -699,24 +747,29 @@ def average(lst):
 # This function translates raw pressure and oxygen data into legible 
 # information.
 
+# oxygen calibration number 0.014064
+# pressure calibration number 0.400900
+
 def readData(data):
 
-	sensorData = str(data.pressure)[:-2].split(",")
-	# ensures partial data is not parsed
-	if len(sensorData) != 2: sensorData = [""]*2
 	# does not update to out-of-bounds values
-	if sensorData[0] != "" and (500 < float(sensorData[0]) < 1020):
-		data.lastPressure = sensorData[0]
-	text = "Pressure: " + str(data.lastPressure)
+	if 1300 < data.pressure[0] < 1900:
+		data.lastPressure = data.pressure[0]
+	text = "Pressure: " + str(int(data.lastPressure))
 	# computes oxygen values at valid pressures
-	if sensorData[0] != "" and float(sensorData[0]) < 800:
-		data.O2vals.append(float(sensorData[1]))
+	if data.pressure[0] < 1800:
+		data.O2vals.append(data.pressure[1])
 		if len(data.O2vals) == 15:
 			data.lastO2 = average(data.O2vals)
 			data.O2vals = []
 	text2 = "Oxygen: " + str(data.lastO2)
-	# checks if the arduino should stop during quench experiments
-	if (not data.hanging) and data.quenching and sensorData[1] != "":
+	if (not data.hanging) and data.degas:
+		if data.pressure[0] < data.pZero: 
+			gasOn(data)
+		else: gasOff(data)
+	else: gasOff(data)
+	# checks if the gas should stop during quench experiments
+	if (not data.hanging) and data.quenching:
 		if data.nextO2 != []:
 			if ((data.nextO2[0] > 1 and data.lastO2 <= (data.nextO2[0]-.7)) or
 					(1 >= data.nextO2[0] > .1 and data.lastO2 <= 
@@ -728,30 +781,23 @@ def readData(data):
 	return text,text2
 
 
-# This function connects to the Arduino and prints the pressure output.
+# This function reads data from the adc and converts it to meaningful 
+# pressure and oxygen readings.
+
+def getReading(data):
+	raw = (data.adc.read_adc_difference(3),data.adc.read_adc_difference(0))
+	return ((raw[0]-data.zero[0])*data.cal[0]+data.zero[1]),raw[1]*data.cal[1]
+
+# This function connects to the adc and prints the pressure output.
 
 def drawSensors(canvas, data):
 
 	# sizes to place pressure display below all buttons
 	margin,center,bheight,bwidth,left,right = sizeSpecs(data)
 
-	if data.time % 15 == 0: 
-		# read from serial port
-		try: 
-			if data.hanging: data.ser.write("wait")
-			else: data.ser.write("go")
-			data.pressure = data.ser.readline()
-			data.ser.flushInput()
-		except: 
-			try: # if arduino connected but not initialized
-				data.ser = serial.Serial('/dev/ttyACM0', 9600)
-				if data.hanging: data.ser.write("wait")
-				else: data.ser.write("go")
-				data.pressure = data.ser.readline() 
-				data.ser.flushInput()
-			except: 
-				data.ser = ""
-				data.pressure = ""
+	if data.time % 5 == 0: 
+		# read from adc
+		data.pressure = getReading(data)
 	# displays pressure and oxygen values
 	text,text2 = readData(data)
 	canvas.create_text(left+bwidth/2,data.height-bheight/4,text=text,
@@ -939,10 +985,6 @@ def setCycleKeyPressed(event, data):
 			if data.edited and data.times[0] != [""]*8:
 				data.cycling = True
 				startCycle(data)
-				try: 
-					data.ser.flushInput()
-					print("Buffer Flushed")
-				except: pass
 
 
 # This function maintains the picture timing of the run function even during
@@ -953,12 +995,14 @@ def setCycleTimerFired(data):
 	# checks if the time between pictures has elapsed
 	if data.running:
 		if (time.time() - data.lastPic) >= data.newPicTime:
+			if not data.noLight: data.illTime += data.newPicTime
 			takePics(data)
 			# turn lights on
 			data.lastPic = time.time()
-			for i in range(len(data.lightPins)):
-				GPIO.output(data.lightPins[i], data.on)
-				data.lights[i] = True
+			if not data.noLight:
+				for i in range(len(data.lightPins)):
+					GPIO.output(data.lightPins[i], data.on)
+					data.lights[i] = True
 	# causes the editing cursor to oscillate
 	for i in range(8):
 		if data.edit[2][i]:
