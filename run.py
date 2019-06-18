@@ -97,6 +97,7 @@ def initRun(data):
 	data.newPicTime = int(float(data.picTime)*60)
 	data.illTime = 0
 	data.noLight = False
+	data.selected = [True]*6
 
 def initQuenching(data):
 	# for the quenching mode
@@ -111,11 +112,11 @@ def initADC(data):
 	# for the adc setup
 	# bulbasaur: ADS1115
 	# ivysaur: ADS1015
-	data.adc = ads1x15.ADS1015()
+	data.adc = ads1x15.ADS1115()
 	# bulbasaur: (0.07777,0.001289),(21500,1300)
 	# ivysaur: (1,0.030511),(1300,1300)
-	data.cal = (1,0.030511) # for each ndew adc/pi/sensor, calibrate.py
-	data.zero = (1300,1300) # read value, desired value
+	data.cal = (0.07777,0.001289) # for each ndew adc/pi/sensor, calibrate.py
+	data.zero = (21500,1300) # read value, desired value
 	data.pressure = "----"
 	data.O2vals = []
 	data.lastO2 = 0
@@ -304,7 +305,11 @@ def runMousePressed(event, data):
 
 	# left column clicks
 	if event.x > left and event.x < (left+bwidth):
-		if event.y > top and event.y < top+bheight and 3 <= index <= 8: 
+		# checkbox clicks
+		if ((left+bwidth-1.25*margin < event.x < left+bwidth-margin/4) and
+			(top+margin/4 < event.y < top+margin*1.25)):
+			data.selected[index-3] = not data.selected[index-3]
+		elif event.y > top and event.y < top+bheight and 3 <= index <= 8: 
 			pressLight(data, index-1)
 	# right column clicks
 	if event.x > right and event.x < (right+bwidth):
@@ -517,6 +522,7 @@ def picture(data,address,foldName,letter,picName):
 		str(round(data.illTime/60.0,2)) + " minutes")
 	pressure,oxygen = readData(data)
 	name = address+foldName[-1]+letter+picName
+	# time.sleep(1)
 	# data.camera.annotate_text = title + "\n" + pressure + "\n" + oxygen
 	# data.camera.capture(name)
 	subprocess.check_call(["fswebcam","--title",title,"--subtitle",pressure,
@@ -570,17 +576,18 @@ def takePics(data):
 	foldName = data.picFolder.split("/") 
 	alphabet = ["A","B","C","D","E","F"]
 	for i in range(len(data.picPins)):
-		# develops a name for the picture
-		date = time.localtime(time.time())
-		picName = time.strftime(":y%ym%md%dH%HM%MS%S.jpg",date)
-		address = data.picFolder + "/"
-		letter = alphabet[i]
-		# turn pic lights on
-		GPIO.output(data.picPins[i], data.on)
-		# take picture
-		picture(data,address,foldName,letter,picName)
-		# turn pic lights off
-		GPIO.output(data.picPins[i], data.off)
+		if data.selected[i]:
+			# develops a name for the picture
+			date = time.localtime(time.time())
+			picName = time.strftime(":y%ym%md%dH%HM%MS%S.jpg",date)
+			address = data.picFolder + "/"
+			letter = alphabet[i]
+			# turn pic lights on
+			GPIO.output(data.picPins[i], data.on)
+			# take picture
+			picture(data,address,foldName,letter,picName)
+			# turn pic lights off
+			GPIO.output(data.picPins[i], data.off)
 
 
 # This function maintains the timing of the system.
@@ -634,6 +641,13 @@ def isOn(data, light):
     else: return "On"
 
 
+# Provides a color based on whether a light is selected.
+
+def selected(data, i):
+	if data.selected[i]: return "red"
+	else: return "lightgray"
+
+
 # Creates a cursor from true/false data
 
 def piping(data, index):
@@ -658,6 +672,8 @@ def drawButtons(canvas, data):
 		canvas.create_rectangle(left,top,left+bwidth,bottom,fill="lightgray")
 		canvas.create_text(left+bwidth/2,top+bheight/2,text=text,
 			font="Arial 20 bold")
+		canvas.create_rectangle(left+bwidth-1.25*margin,top+margin/4,
+			left+bwidth-margin/4,top+margin*1.25,fill=selected(data,i))
 		if (i == 1 or i == 2): color="lightblue"
 		else: color="lightgray"
 		canvas.create_rectangle(right,top,right+bwidth,bottom,fill=color)
